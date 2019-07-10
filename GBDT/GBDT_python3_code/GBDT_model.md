@@ -37,7 +37,12 @@ for i in progress(range(1000)):
 # 导入辅助函数,这里的辅助函数全部在模块中，如果代码报错，需要自行对辅助函数的py文件和类进行整理
 from utils.data_manipulation import train_test_split, standardize, to_categorical
 from utils.data_operation import mean_squared_error, accuracy_score
+
+# GBDT需要用到决策树的回归树模块，这也是GBDT的核心基础算法之一，如果对决策树不熟悉，需要先学习决策树decision_tree库下面的代码
+
 from utils.decision_tree.decision_tree_model import RegressionTree
+
+
 from utils.misc import bar_widgets
 from utils.loss_functions import SquareLoss, CrossEntropy,SoftMaxLoss
 
@@ -145,6 +150,117 @@ class GBDTClassifier(GBDT):
     def fit(self, X, y):
         y = to_categorical(y)
         super(GBDTClassifier, self).fit(X, y)
+
+
+
+# 分类算法的具体案例测试
+from __future__ import division, print_function
+import numpy as np
+from sklearn import datasets
+import matplotlib.pyplot as plt
+
+# Import helper functions
+# from utils.data_manipulation import train_test_split, accuracy_score
+# from utils.loss_functions import CrossEntropy
+from utils.misc import Plot
+#from gradient_boosting_decision_tree.gbdt_model import GBDTClassifier
+
+def main():
+
+    print ("-- Gradient Boosting Classification --")
+
+    data = datasets.load_iris()
+    X = data.data
+    y = data.target
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4)
+    print(y_train)
+
+    clf = GBDTClassifier()
+    clf.fit(X_train, y_train)
+    y_pred = clf.predict(X_test)
+
+    accuracy = accuracy_score(y_test, y_pred)
+
+    print ("Accuracy:", accuracy)
+
+
+    Plot().plot_in_2d(X_test, y_pred,
+        title="Gradient Boosting",
+        accuracy=accuracy,
+        legend_labels=data.target_names)
+
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+# 回归算法的具体案例测试，此处需要导入文件TempLinkoping2016.txt进行测试
+# from __future__ import division, print_function
+# import numpy as np
+# import pandas as pd
+# import matplotlib.pyplot as plt
+# import progressbar
+
+# from utils import train_test_split, standardize, to_categorical
+# from utils import mean_squared_error, accuracy_score, Plot
+# from utils.loss_functions import SquareLoss
+# from utils.misc import bar_widgets
+# from gradient_boosting_decision_tree.gbdt_model import GBDTRegressor
+
+def main():
+    print ("-- Gradient Boosting Regression --")
+
+    # Load temperature data
+    data = pd.read_csv('E:\python_data\TempLinkoping2016.txt', sep="\t")
+
+    time = np.atleast_2d(data["time"].as_matrix()).T
+    temp = np.atleast_2d(data["temp"].as_matrix()).T
+
+    X = time.reshape((-1, 1))               # Time. Fraction of the year [0, 1]
+    X = np.insert(X, 0, values=1, axis=1)   # Insert bias term
+    y = temp[:, 0]                          # Temperature. Reduce to one-dim
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
+
+    model = GBDTRegressor()
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+
+    y_pred_line = model.predict(X)
+
+    # Color map
+    cmap = plt.get_cmap('viridis')
+
+    mse = mean_squared_error(y_test, y_pred)
+
+    print ("Mean Squared Error:", mse)
+
+    # Plot the results
+    m1 = plt.scatter(366 * X_train[:, 1], y_train, color=cmap(0.9), s=10)
+    m2 = plt.scatter(366 * X_test[:, 1], y_test, color=cmap(0.5), s=10)
+    m3 = plt.scatter(366 * X_test[:, 1], y_pred, color='black', s=10)
+    plt.suptitle("Regression Tree")
+    plt.title("MSE: %.2f" % mse, fontsize=10)
+    plt.xlabel('Day')
+    plt.ylabel('Temperature in Celcius')
+    plt.legend((m1, m2, m3), ("Training data", "Test data", "Prediction"), loc='lower right')
+    plt.show()
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
 
 
 ```
