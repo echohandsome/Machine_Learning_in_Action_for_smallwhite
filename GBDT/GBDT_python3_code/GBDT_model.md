@@ -89,7 +89,7 @@ class GBDT(object):
 
         self.loss = SquareLoss()
         if not self.regression:
-            self.loss = SotfMaxLoss()
+            self.loss = SoftMaxLoss()
 
         # 分类问题也使用回归树，利用残差去学习概率
         self.trees = []
