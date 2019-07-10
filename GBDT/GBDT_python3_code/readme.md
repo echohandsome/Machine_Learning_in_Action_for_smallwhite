@@ -6,3 +6,4 @@ v1.0 添加GBDT的辅助函数，为运行GBDT算法代码，需要下载辅助�
 
 添加模型的回归和分类问题代码和测试数据
 
+代码参考作者地址：https://github.com/RRdmlearning/Machine-Learning-From-Scratch
