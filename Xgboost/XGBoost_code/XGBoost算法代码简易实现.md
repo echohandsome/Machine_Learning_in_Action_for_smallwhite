@@ -193,8 +193,8 @@ class XGBoostRegressionTree(DecisionTree):
         y, y_pred = y[:, :col], y[:, col:]
         return y, y_pred
     
-    # 定义打分函数基尼值，此处忽略正则化参数λ
-    # 函数计算切分后的数据集的gain值
+    # 定义打分函数增益值，此处忽略正则化参数λ
+    # 函数计算切分后的数据集的Gain值
     # 这里类并的loss方法没有一阶导数和二阶导数可以调用，但是在XGBoost类里面定义了损失函数为最小二乘损失
     def _gain(self, y, y_pred):
         
@@ -213,7 +213,7 @@ class XGBoostRegressionTree(DecisionTree):
         y1, y1_pred = self._split(y1)
         y2, y2_pred = self._split(y2)
         
-        # 对三个切分好的参数分别计算最终的基尼系数
+        # 对三个切分好的参数分别计算最终的增益系数
         true_gain = self._gain(y1, y1_pred)
         false_gain = self._gain(y2, y2_pred)
         gain = self._gain(y, y_pred)
@@ -532,7 +532,7 @@ if __name__ == "__main__":
 ```python
 print('\n'.join([''.join([('365'[(x-y) % len('365')] if 
                            ((x*0.05)**2+(y*0.1)**2-1)**3-(x*0.05)**2*(y*0.1)**3 <= 0 else ' ') 
-                          for x in range(-30, 30)]) for y in range(30, -30, -1)]))  
+                          for x in range(-30, 30)]) for y in range(30, -30, -1)])) 
 ```
 
                                                                 
