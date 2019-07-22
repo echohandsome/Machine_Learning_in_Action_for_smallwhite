@@ -5,6 +5,7 @@ https://www.zhihu.com/people/chen-zhen-64-12/columns
 
 
 ```python
+from __future__ import division, print_function
 import numpy as np
 import pandas as pd
 ```
@@ -139,7 +140,6 @@ progressbar显示完成的进度条
 # 导入进度条调度函数，方便展示模型训练进度和倒计时
 from utils.decision_tree.decision_tree_model import DecisionTree
 from utils.misc import bar_widgets
-from __future__ import division, print_function
 import progressbar
 ```
 
@@ -149,7 +149,7 @@ import progressbar
 class LeastSquaresLoss():
     """Least squares loss"""
     
-    # 定义梯度（最小二乘的一阶导数），参数包括真实值和预测值
+    # 定义梯度函数（最小二乘的一阶导数），参数包括真实值和预测值
     def gradient(self, actual, predicted):
         return actual - predicted
 
@@ -158,6 +158,18 @@ class LeastSquaresLoss():
     def hess(self, actual, predicted):
         return np.ones_like(actual)
 ```
+
+
+```python
+isinstance(LeastSquaresLoss,object)
+```
+
+
+
+
+    True
+
+
 
 
 ```python
@@ -183,6 +195,7 @@ class XGBoostRegressionTree(DecisionTree):
     
     # 定义打分函数基尼值，此处忽略正则化参数λ
     # 函数计算切分后的数据集的gain值
+    # 这里类并的loss方法没有一阶导数和二阶导数可以调用，但是在XGBoost类里面定义了损失函数为最小二乘损失
     def _gain(self, y, y_pred):
         
         # 假设这里的函数是平方误差，那么梯度就是残差，这里的结果就是对矩阵求元素对应位置相减，然后对所有元素求和，最后求平方
@@ -193,13 +206,14 @@ class XGBoostRegressionTree(DecisionTree):
     
     # 该函数通过调用gain()来计算树节点的纯度，并以此来作为树是否分割的标准
     # 对输入的三个参数均执行相同的切分操作，切分为两部分
+    
     def _gain_by_taylor(self, y, y1, y2):
         # Split
         y, y_pred = self._split(y)
         y1, y1_pred = self._split(y1)
         y2, y2_pred = self._split(y2)
         
-        # 对三个切分好的参数分别计算基尼
+        # 对三个切分好的参数分别计算最终的基尼系数
         true_gain = self._gain(y1, y1_pred)
         false_gain = self._gain(y2, y2_pred)
         gain = self._gain(y, y_pred)
@@ -207,22 +221,26 @@ class XGBoostRegressionTree(DecisionTree):
     
     
     # 此处忽略了正则化参数λ，因此函数名为近似更新
-    # xgboost被切割完成后，每个子节点的取值都是定好的了
     # 将approximate_update()作为估算子节点取值的方法
+    # xgboost被切割完成后，每个子节点的取值都已经计算完成，这里返回每个叶节点的预测分数
+    
     def _approximate_update(self, y):
         # y split into y, y_pred
         y, y_pred = self._split(y)
         gradient = np.sum(self.loss.gradient(y, y_pred),axis=0)
         hessian = np.sum(self.loss.hess(y, y_pred), axis=0)
-        update_approximation =  gradient / hessian
-        return update_approximation
+        # 这里特别注意计算梯度的时候，使用的是最小二乘法，最小二乘法是（真实值-预测值）**2，那么这个地方实际上y是真实值，y_pred是预测值
+        # 所以这里在计算update_approximation的时候是没有负号的，按照XGBoost的公式推导顺序本来是有负号的，我也是理解了很久才理解透彻
+        update_approximation = gradient / hessian
+        return update_approximation 
 
-    # 将gain_by_taylor()作为切割树的标准
-    # 传递回给decisionTree，并以此来构建决策树
+    # 将gain_by_taylor()作为切割树的标准，将approximate_update()作为估算子节点取值的方法，传递回给decisionTree，并以此来构建决策树
     # 很多人会看不懂下面这个super函数，这里看起来是集成了XGBoostRegressionTree本身，实际上不是并不是
     # 需要看到，这里的参数是self，那么我们需要回过去看看XGBoostRegressionTree的self对象是谁
     # XGBoostRegressionTree(DecisionTree)这个类是个子类，大家有没有发现这个子类并没有定义self函数
     # 那是因为，在单层继承中，python定义，子类若不自定义self,那么将直接继承父类的self作为自己的self
+    
+    # 这里训练完成后返回的决策树的相关参数，也就是模型
     def fit(self, X, y):
         self._impurity_calculation = self._gain_by_taylor
         self._leaf_value_calculation = self._approximate_update
@@ -256,7 +274,8 @@ class XGBoost(object):
     每棵子树的最大层数（大于后不继续切割）
         The maximum depth of a tree.
     """
-
+    
+    # 构建一个含有n_estimators棵XGBoostRegressionTree的类
     def __init__(self, n_estimators=200, learning_rate=0.01, min_samples_split=2,
                  min_impurity=1e-7, max_depth=2):
         self.n_estimators = n_estimators  # 树最大生成数量
@@ -267,7 +286,7 @@ class XGBoost(object):
 
         self.bar = progressbar.ProgressBar(widgets=bar_widgets)
 
-        # 定义分类的损失为最小二乘损失
+        # 定义损失函数为最小二乘损失
         self.loss = LeastSquaresLoss()
 
         # 初始化回归树
@@ -297,9 +316,10 @@ class XGBoost(object):
             tree = self.trees[i]
             y_and_pred = np.concatenate((y, y_pred), axis=1)
             tree.fit(X, y_and_pred)
-            # 这里是调用了决策树的predict方法，逐个对样本进行分类并返回标签集
+            # 这里是调用了决策树基函数的predict方法，逐个对样本进行分类并返回标签集
             update_pred = tree.predict(X)
             update_pred = np.reshape(update_pred, (m, -1))
+            # 加法模型，预测值是当前轮和上一轮叠加的结果
             y_pred += update_pred
 
     def predict(self, X):
@@ -328,17 +348,17 @@ from utils.data_operation import mean_squared_error, accuracy_score
 def main():
     print ("-- XGBoost --")
 
-    # Load temperature data
-    data = pd.read_csv('E:\python_data\Machine-Learning-From-Scratch-master\TempLinkoping2016.txt', sep="\t")
+    # 加载温度数据集，本问题为回归问题
+    data = pd.read_csv('D:\Machine-Learning-From-Scratch-master\TempLinkoping2016.txt', sep="\t")
 
-    time = np.atleast_2d(data["time"].as_matrix()).T
-    temp = np.atleast_2d(data["temp"].as_matrix()).T
+    time = np.atleast_2d(data["time"].values).T
+    temp = np.atleast_2d(data["temp"].values).T
 
     X = time.reshape((-1, 1))               # Time. Fraction of the year [0, 1]
-    X = np.insert(X, 0, values=1, axis=1)   # Insert bias term
+    X = np.insert(X, 0, values=1, axis=1)   # 插入偏差项
     y = temp[:, 0]                          # Temperature. Reduce to one-dim
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
     #print(y_train)
     model = XGBoost()
     model.fit(X_train, y_train)
@@ -375,34 +395,30 @@ if __name__ == "__main__":
     main()
 ```
 
-    D:\ProgramData\Anaconda3\lib\site-packages\ipykernel_launcher.py:12: FutureWarning: Method .as_matrix will be removed in a future version. Use .values instead.
-      if sys.path[0] == '':
-    D:\ProgramData\Anaconda3\lib\site-packages\ipykernel_launcher.py:13: FutureWarning: Method .as_matrix will be removed in a future version. Use .values instead.
-      del sys.path[0]
     Training:   0% [                                               ] ETA:  --:--:--
 
     -- XGBoost --
     
 
-    Training: 100% [------------------------------------------------] Time: 0:00:16
+    Training: 100% [------------------------------------------------] Time: 0:00:47
     
 
-    [ 5.2 14.5  6.4  6.1  3.7]
-    Mean Squared Error: 119.64498937861559
+    [18.8  6.1 -0.8 17.6  5.2]
+    Mean Squared Error: 122.01499106753589
     
 
 
-![png](output_20_4.png)
+![png](output_21_4.png)
 
 
 
 ```python
-data = pd.read_csv('E:\python_data\Machine-Learning-From-Scratch-master\TempLinkoping2016.txt', sep="\t")
+data = pd.read_csv('D:\Machine-Learning-From-Scratch-master\TempLinkoping2016.txt', sep="\t")
 ```
 
 
 ```python
-data.head(3)
+data.head(1)
 ```
 
 
@@ -436,16 +452,6 @@ data.head(3)
       <td>0.002732</td>
       <td>0.1</td>
     </tr>
-    <tr>
-      <th>1</th>
-      <td>0.005464</td>
-      <td>-4.5</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>0.008197</td>
-      <td>-6.3</td>
-    </tr>
   </tbody>
 </table>
 </div>
@@ -462,20 +468,20 @@ from utils.data_operation import mean_squared_error, accuracy_score
 def main():
     print ("-- XGBoost --")
 
-    # Load temperature data
+    # 加载《统计学习方法》例8.2
     x = np.array(range(1,11,1))
     y = np.array([5.56,5.70,5.91,6.40,6.80,7.05,8.9,8.7,9.00,9.05])
     data = pd.DataFrame([x,y]).T
     data.columns=['x','y']
 
-    time = np.atleast_2d(data["x"].as_matrix()).T
-    temp = np.atleast_2d(data["y"].as_matrix()).T
+    X = np.atleast_2d(data["x"].values).T
+    Y = np.atleast_2d(data["y"].values).T
 
-    X = time.reshape((-1, 1))               # Time. Fraction of the year [0, 1]
-    X = np.insert(X, 0, values=1, axis=1)   # Insert bias term
-    y = temp[:, 0]                          # Temperature. Reduce to one-dim
+    X = X.reshape((-1, 1))              
+    X = np.insert(X, 0, values=1, axis=1)   
+    y = Y[:, 0]                          
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
     #print(y_train)
     model = XGBoost()
     model.fit(X_train, y_train)
@@ -506,11 +512,7 @@ if __name__ == "__main__":
     main()
 ```
 
-    D:\ProgramData\Anaconda3\lib\site-packages\ipykernel_launcher.py:15: FutureWarning: Method .as_matrix will be removed in a future version. Use .values instead.
-      from ipykernel import kernelapp as app
-    D:\ProgramData\Anaconda3\lib\site-packages\ipykernel_launcher.py:16: FutureWarning: Method .as_matrix will be removed in a future version. Use .values instead.
-      app.launch_new_instance()
-    Training:  91% [-------------------------------------------     ] ETA:  0:00:00
+    Training:  44% [---------------------                           ] ETA:  0:00:00
 
     -- XGBoost --
     
@@ -518,19 +520,19 @@ if __name__ == "__main__":
     Training: 100% [------------------------------------------------] Time: 0:00:00
     
 
-    [5.91 8.7  6.4  8.9  9.05]
-    Mean Squared Error: 4.08552
+    [8.9 9. ]
+    Mean Squared Error: 1.838750000000001
     
 
 
-![png](output_23_4.png)
+![png](output_24_4.png)
 
 
 
 ```python
-print('\n'.join([''.join([('36.5'[(x-y) % len('36.5')] if 
+print('\n'.join([''.join([('365'[(x-y) % len('365')] if 
                            ((x*0.05)**2+(y*0.1)**2-1)**3-(x*0.05)**2*(y*0.1)**3 <= 0 else ' ') 
-                          for x in range(-30, 30)]) for y in range(30, -30, -1)]))
+                          for x in range(-30, 30)]) for y in range(30, -30, -1)]))  
 ```
 
                                                                 
@@ -551,29 +553,29 @@ print('\n'.join([''.join([('36.5'[(x-y) % len('36.5')] if
                                                                 
                                                                 
                                                                 
-                    .536.536.           .536.536.               
-                536.536.536.536.5   536.536.536.536.5           
-              .536.536.536.536.536.536.536.536.536.536.         
-             .536.536.536.536.536.536.536.536.536.536.53        
-            .536.536.536.536.536.536.536.536.536.536.536.       
-            536.536.536.536.536.536.536.536.536.536.536.5       
-            36.536.536.536.536.536.536.536.536.536.536.53       
-            6.536.536.536.536.536.536.536.536.536.536.536       
-            .536.536.536.536.536.536.536.536.536.536.536.       
-            536.536.536.536.536.536.536.536.536.536.536.5       
-             6.536.536.536.536.536.536.536.536.536.536.5        
-              536.536.536.536.536.536.536.536.536.536.5         
-              36.536.536.536.536.536.536.536.536.536.53         
-                536.536.536.536.536.536.536.536.536.5           
-                 6.536.536.536.536.536.536.536.536.5            
-                  536.536.536.536.536.536.536.536.5             
-                    .536.536.536.536.536.536.536.               
-                      6.536.536.536.536.536.536                 
-                        36.536.536.536.536.53                   
-                           36.536.536.536.                      
-                              36.536.53                         
-                                 36.                            
-                                  .                             
+                    653653653           365365365               
+                65365365365365365   36536536536536536           
+              36536536536536536536536536536536536536536         
+             3653653653653653653653653653653653653653653        
+            365365365365365365365365365365365365365365365       
+            653653653653653653653653653653653653653653653       
+            536536536536536536536536536536536536536536536       
+            365365365365365365365365365365365365365365365       
+            653653653653653653653653653653653653653653653       
+            536536536536536536536536536536536536536536536       
+             6536536536536536536536536536536536536536536        
+              36536536536536536536536536536536536536536         
+              65365365365365365365365365365365365365365         
+                6536536536536536536536536536536536536           
+                 36536536536536536536536536536536536            
+                  536536536536536536536536536536536             
+                    53653653653653653653653653653               
+                      5365365365365365365365365                 
+                        536536536536536536536                   
+                           365365365365365                      
+                              653653653                         
+                                 536                            
+                                  6                             
                                                                 
                                                                 
                                                                 
